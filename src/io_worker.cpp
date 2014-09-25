@@ -97,6 +97,7 @@ bool IOWorker::remove_pool_async(const Address& address) {
 }
 
 bool IOWorker::schedule_reconnect_async(const Address& address, uint64_t wait) {
+  if (!address.is_valid_family()) logger_->critical("IOWorker: schedule_reconnect_async with invalid address");
   IOWorkerEvent event;
   event.type = IOWorkerEvent::SCHEDULE_RECONNECT;
   event.address = address;
@@ -219,12 +220,15 @@ void IOWorker::on_pending_pool_reconnect(Timer* timer) {
   const Address& address = pending_reconnect->address;
 
   if (!is_closing_) {
-    logger_->info(
-            "IOWorker: Attempting to reconnect to host %s",
-            address.to_string(true).c_str());
-    add_pool(address, false);
+    if (address.is_valid_family()) {
+      logger_->info(
+        "IOWorker: Attempting to reconnect to host %s",
+        address.to_string(true).c_str());
+      add_pool(address, false);
+    } else {
+      logger_->critical("IOWorker: on_pending_pool_reconnect with invalid address");
+    }
   }
-
   pending_reconnects_.erase(address);
 }
 
@@ -247,13 +251,17 @@ void IOWorker::on_event(const IOWorkerEvent& event) {
       return;
     }
 
-    SharedRefPtr<PendingReconnect> pending_reconnect(new PendingReconnect(event.address));
-    pending_reconnects_[event.address] = pending_reconnect;
+    if (event.address.is_valid_family()) {
+      SharedRefPtr<PendingReconnect> pending_reconnect(new PendingReconnect(event.address));
+      pending_reconnects_[event.address] = pending_reconnect;
 
-    pending_reconnect->timer = Timer::start(loop(),
-                                            event.reconnect_wait,
-                                            pending_reconnect.get(),
-                                            boost::bind(&IOWorker::on_pending_pool_reconnect, this, _1));
+      pending_reconnect->timer = Timer::start(loop(),
+                event.reconnect_wait,
+                pending_reconnect.get(),
+                boost::bind(&IOWorker::on_pending_pool_reconnect, this, _1));
+    } else {
+      logger_->critical("IOWorker: SCHEDULE_RECONNECT event with invalid address");
+    }
   }
 }
 
