@@ -174,6 +174,8 @@ void ControlConnection::on_connection_ready(Connection* connection) {
 void ControlConnection::on_connection_closed(Connection* connection) {
   bool retry_current_host = false;
 
+  logger_->warn("ConstrolConnection: Lost connection on host %s", connection->address_string().c_str());
+
   // This pointer to the connection is no longer valid once it's closed
   connection_ = NULL;
 

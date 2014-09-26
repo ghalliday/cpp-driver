@@ -63,6 +63,8 @@ public:
 
   void debug(const char* format, ...) { LOG_MESSAGE(CASS_LOG_DEBUG); }
 
+  void trace(const char* format, ...) { LOG_MESSAGE(CASS_LOG_TRACE); }
+
 #undef LOG_MESSAGE
 
 private:
