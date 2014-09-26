@@ -214,8 +214,8 @@ void IOWorker::close_handles() {
 }
 
 void IOWorker::on_pending_pool_reconnect(Timer* timer) {
-  SharedRefPtr<PendingReconnect> pending_reconnect(
-        static_cast<PendingReconnect*>(timer->data()));
+  PendingReconnect* pending_reconnect =
+      static_cast<PendingReconnect*>(timer->data());
 
   const Address& address = pending_reconnect->address;
 
