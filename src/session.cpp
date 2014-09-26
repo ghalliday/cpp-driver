@@ -281,6 +281,10 @@ void Session::on_event(const SessionEvent& event) {
     case SessionEvent::NOTIFY_DOWN:
       control_connection_.on_down(event.address, event.is_critical_failure);
       break;
+
+    default:
+      assert(false);
+      break;
   }
 }
 

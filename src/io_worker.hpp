@@ -43,7 +43,16 @@ class Logger;
 class Timer;
 
 struct IOWorkerEvent {
-  enum Type { ADD_POOL, REMOVE_POOL, SCHEDULE_RECONNECT };
+  enum Type {
+    INVALID,
+    ADD_POOL,
+    REMOVE_POOL,
+    SCHEDULE_RECONNECT
+  };
+
+  IOWorkerEvent()
+    : type(INVALID) {}
+
   Type type;
   Address address;
   uint64_t reconnect_wait;

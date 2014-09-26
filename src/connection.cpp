@@ -302,7 +302,7 @@ void Connection::maybe_set_keyspace(ResponseMessage* response) {
 void Connection::on_connect(Connecter* connecter) {
   Connection* connection = static_cast<Connection*>(connecter->data());
 
-  if (connection->is_defunct()) {
+  if (connection->connect_timer_ == NULL) {
     return; // Timed out
   }
 
