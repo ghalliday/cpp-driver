@@ -172,8 +172,10 @@ void IOWorker::notify_pool_closed(Pool* pool) {
   Address address = pool->address(); // Not a reference on purpose
   bool is_critical_failure = pool->is_critical_failure();
 
-  logger_->info("IOWorker: Pool for host %s closed",
-                address.to_string().c_str());
+  logger_->info("IOWorker: Pool for host %s closed: pool(%p) io_worker(%p)",
+                address.to_string().c_str(),
+                pool,
+                this);
 
   // All non-shared pointers to this pool are invalid after this call
   // and it must be done before maybe_notify_closed().
@@ -222,11 +224,12 @@ void IOWorker::on_pending_pool_reconnect(Timer* timer) {
   if (!is_closing_) {
     if (address.is_valid_family()) {
       logger_->info(
-        "IOWorker: Attempting to reconnect to host %s",
-        address.to_string(true).c_str());
+        "IOWorker: Attempting to reconnect to host %s io_worker(%p)",
+        address.to_string(true).c_str(),
+        this);
       add_pool(address, false);
     } else {
-      logger_->critical("IOWorker: on_pending_pool_reconnect with invalid address");
+      logger_->critical("IOWorker: on_pending_pool_reconnect with invalid address io_worker(%p)", this);
     }
   }
   pending_reconnects_.erase(address);
@@ -239,6 +242,7 @@ void IOWorker::on_event(const IOWorkerEvent& event) {
       // reconnection right away.
       PendingReconnectMap::iterator it = pending_reconnects_.find(event.address);
       if (it != pending_reconnects_.end()) {
+        logger_->debug("IOWorker: ADD_POOL for %s canceling reconnect(%p) io_worker(%p)", event.address.to_string().c_str(), it->second.get(), this);
         it->second->stop_timer();
         pending_reconnects_.erase(it);
       }
@@ -249,27 +253,34 @@ void IOWorker::on_event(const IOWorkerEvent& event) {
 
     case IOWorkerEvent::REMOVE_POOL: {
       PoolMap::iterator it = pools_.find(event.address);
-      if (it != pools_.end()) it->second->close();
+      if (it != pools_.end()) {
+        logger_->debug("IOWorker: REMOVE_POOL for %s closing pool(%p) io_worker(%p)", event.address.to_string().c_str(), it->second.get(), this);
+        it->second->close();
+      }
       break;
     }
 
-    case IOWorkerEvent::SCHEDULE_RECONNECT:
-      if (is_closing_ || pending_reconnects_.count(event.address) > 0) {
+    case IOWorkerEvent::SCHEDULE_RECONNECT: {
+      if (!event.address.is_valid_family()) {
+        logger_->critical("IOWorker: SCHEDULE_RECONNECT event with invalid address io_worker(%p)", this);
         return;
       }
 
-      if (event.address.is_valid_family()) {
-        SharedRefPtr<PendingReconnect> pending_reconnect(new PendingReconnect(event.address));
-        pending_reconnects_[event.address] = pending_reconnect;
-
-        pending_reconnect->timer = Timer::start(loop(),
-                                                event.reconnect_wait,
-                                                pending_reconnect.get(),
-                                                boost::bind(&IOWorker::on_pending_pool_reconnect, this, _1));
-      } else {
-        logger_->critical("IOWorker: SCHEDULE_RECONNECT event with invalid address");
+      if (is_closing_ || pending_reconnects_.count(event.address) > 0) {
+        logger_->debug("IOWorker: SCHEDULE_RECONNECT already pending for %s io_worker(%p)", event.address.to_string().c_str(), this);
+        return;
       }
+
+      SharedRefPtr<PendingReconnect> pending_reconnect(new PendingReconnect(event.address, logger_));
+      pending_reconnects_[event.address] = pending_reconnect;
+
+      pending_reconnect->timer = Timer::start(loop(),
+                                              event.reconnect_wait,
+                                              pending_reconnect.get(),
+                                              boost::bind(&IOWorker::on_pending_pool_reconnect, this, _1));
+      logger_->debug("IOWorker: SCHEDULE_RECONNECT for %s reconnect(%p) io_worker(%p)", event.address.to_string().c_str(), pending_reconnect.get(), this);
       break;
+      }
 
     default:
       assert(false);

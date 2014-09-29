@@ -296,6 +296,8 @@ void ControlConnection::refresh_node_info(SharedRefPtr<Host> host,
     response_callback = boost::bind(&ControlConnection::on_refresh_node_info_all, this, _1, _2);
   }
 
+  logger_->debug("ControlConnection: refresh_node_info: %s", query.c_str());
+
   RefreshNodeData data(host, callback);
   connection_->execute(
         new ControlHandler<RefreshNodeData>(new QueryRequest(query),
