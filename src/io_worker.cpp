@@ -218,6 +218,7 @@ void IOWorker::close_handles() {
 void IOWorker::on_pending_pool_reconnect(Timer* timer) {
   PendingReconnect* pending_reconnect =
       static_cast<PendingReconnect*>(timer->data());
+  assert(pending_reconnect->ref_count() == 1);
 
   const Address& address = pending_reconnect->address;
 
@@ -272,15 +273,18 @@ void IOWorker::on_event(const IOWorkerEvent& event) {
       }
 
       SharedRefPtr<PendingReconnect> pending_reconnect(new PendingReconnect(event.address, logger_));
+      assert(pending_reconnect->ref_count() == 1);
       pending_reconnects_[event.address] = pending_reconnect;
+      assert(pending_reconnect->ref_count() == 2);
 
       pending_reconnect->timer = Timer::start(loop(),
                                               event.reconnect_wait,
                                               pending_reconnect.get(),
                                               boost::bind(&IOWorker::on_pending_pool_reconnect, this, _1));
+      assert(pending_reconnect->ref_count() == 2);
       logger_->debug("IOWorker: SCHEDULE_RECONNECT for %s reconnect(%p) io_worker(%p)", event.address.to_string().c_str(), pending_reconnect.get(), this);
       break;
-      }
+    }
 
     default:
       assert(false);
