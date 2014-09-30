@@ -117,19 +117,19 @@ private:
   struct PendingReconnect : public RefCounted<PendingReconnect> {
     PendingReconnect(Address address, Logger* logger)
         : address(address)
-        , logger_(logger)
+        , logger(logger)
         , timer(NULL) {
-      logger_->debug("PendingReconnect: %p ctor", this);
+      logger->debug("PendingReconnect: %p ctor timer(%p)", this, timer);
     }
 
     ~PendingReconnect() {
-      logger_->debug("PendingReconnect: %p dtor", this);
+      logger->debug("PendingReconnect: %p dtor timer(%p)", this, timer);
     }
 
     void stop_timer();
 
     Address address;
-    Logger* logger_;
+    Logger* logger;
     Timer* timer;
   };
 
