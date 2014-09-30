@@ -163,7 +163,7 @@ void IOWorker::request_finished(RequestHandler* request_handler) {
 void IOWorker::notify_pool_ready(Pool* pool) {
   if (pool->is_initial_connection()) {
     session_->notify_ready_async();
-  } else if (!is_closing_ && !pool->is_defunct()){
+  } else if (!is_closing_ && pool->is_ready()){
     session_->notify_up_async(pool->address());
   }
 }
