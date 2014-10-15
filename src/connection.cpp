@@ -149,12 +149,17 @@ Connection::Connection(uv_loop_t* loop, Logger* logger, const Config& config,
     , keyspace_(keyspace)
     , protocol_version_(protocol_version)
     , response_(new ResponseMessage())
-    , ssl_handshake_done_(false)
     , version_("3.0.0")
     , event_types_(0)
-    , connect_timer_(NULL) {
+    , connect_timer_(NULL)
+    , ssl_session_(NULL) {
   socket_.data = this;
   uv_tcp_init(loop_, &socket_);
+
+  SslContext* ssl_context = config_.ssl_context();
+  if (ssl_context != NULL) {
+    ssl_session_ = ssl_context->create_session();
+  }
 }
 
 void Connection::connect() {
@@ -363,7 +368,12 @@ void Connection::on_connect(Connecter* connecter) {
     uv_read_start(copy_cast<uv_tcp_t*, uv_stream_t*>(&connection->socket_),
                   alloc_buffer, on_read);
     connection->state_ = CONNECTION_STATE_CONNECTED;
-    connection->on_connected();
+
+    if (connection->ssl_session_ != NULL) {
+      connection->ssl_handshake();
+    } else {
+      connection->on_connected();
+    }
   } else {
     connection->logger_->info("Connection: Connect error '%s' on host %s",
                               uv_err_name(uv_last_error(connection->loop_)),
@@ -412,6 +422,7 @@ void Connection::on_close(uv_handle_t* handle) {
 void Connection::on_read(uv_stream_t* client, ssize_t nread, uv_buf_t buf) {
   Connection* connection = static_cast<Connection*>(client->data);
 
+
   if (nread == -1) {
     if (uv_last_error(connection->loop_).code != UV_EOF) {
       connection->logger_->info("Connection: Read error '%s' on host %s",
@@ -422,7 +433,30 @@ void Connection::on_read(uv_stream_t* client, ssize_t nread, uv_buf_t buf) {
     free_buffer(buf);
     return;
   }
-  connection->consume(buf.base, nread);
+
+  if (connection->ssl_session_) {
+    SslSession* ssl_session = connection->ssl_session_;
+
+    if(ssl_session->write(buf.base, nread) < 0) {
+      connection->notify_error("Error writing bytes to SSL stream");
+    }
+
+    if (ssl_session->is_handshake_done()) {
+      char temp_buf[SslHandshakeWriter::MAX_BUFFER_SIZE];
+      int rc =  0;
+      while ((rc = ssl_session->decrypt(temp_buf, sizeof(temp_buf))) > 0) {
+        connection->consume(temp_buf, rc);
+      }
+    } else {
+      connection->ssl_handshake();
+      if (ssl_session->is_handshake_done()) {
+        connection->on_connected();
+      }
+    }
+  } else {
+    connection->consume(buf.base, nread);
+  }
+
   free_buffer(buf);
 }
 
@@ -441,7 +475,6 @@ void Connection::on_timeout(RequestTimer* timer) {
 }
 
 void Connection::on_connected() {
-  // TODO (mpenick): Implement SSL
   write(new StartupHandler(this, new OptionsRequest()));
 }
 
@@ -517,6 +550,14 @@ void Connection::notify_error(const std::string& error) {
   defunct();
 }
 
+void Connection::ssl_handshake() {
+  char buf[SslHandshakeWriter::MAX_BUFFER_SIZE];
+  int rc = ssl_session_->read(buf, sizeof(buf));
+  if (rc < 0 || !SslHandshakeWriter::write(this, buf, rc)) {
+    notify_error("Unable to write to SSL session during SSL handshake");
+  }
+}
+
 void Connection::send_credentials() {
   ScopedPtr<V1Authenticator> v1_auth(config_.auth_provider()->new_authenticator_v1(address_));
   if (v1_auth) {
@@ -567,6 +608,7 @@ int32_t Connection::PendingWriteBuffer::write(Handler* handler) {
 
 void Connection::PendingWriteBuffer::flush() {
   if (!is_flushed_ && !buffers_.empty()) {
+    // TODO(mpenick): Handle SSL writes
     uv_stream_t* sock_stream = copy_cast<uv_tcp_t*, uv_stream_t*>(&connection_->socket_);
 
     uv_bufs_.clear();
@@ -645,6 +687,32 @@ void Connection::PendingWriteBuffer::on_write(uv_write_t* req, int status) {
   connection->flush();
 }
 
+bool Connection::SslHandshakeWriter::write(Connection* connection, char* buf, size_t buf_size) {
+  SslHandshakeWriter* writer = new SslHandshakeWriter(connection, buf, buf_size);
+  uv_stream_t* stream = copy_cast<uv_tcp_t*, uv_stream_t*>(&connection->socket_);
 
+  int rc = uv_write(&writer->req_, stream, &writer->uv_buf_, 1, SslHandshakeWriter::on_write);
+  if (rc != 0) {
+    delete writer;
+    return false;
+  }
+
+  return true;
+}
+
+Connection::SslHandshakeWriter::SslHandshakeWriter(Connection* connection, char* buf, size_t buf_size)
+  : connection_(connection)
+  , uv_buf_(uv_buf_init(buf, buf_size)) {
+  memcpy(buf_, buf, buf_size);
+  req_.data = this;
+}
+
+void Connection::SslHandshakeWriter::on_write(uv_write_t* req, int status) {
+  SslHandshakeWriter* writer = static_cast<SslHandshakeWriter*>(req->data);
+  if (status != 0) {
+    writer->connection_->notify_error("Failed to write during SSL handshake");
+  }
+  delete writer;
+}
 
 } // namespace cass

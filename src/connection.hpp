@@ -28,6 +28,7 @@
 #include "response.hpp"
 #include "schema_change_handler.hpp"
 #include "scoped_ptr.hpp"
+#include "ssl.hpp"
 #include "stream_manager.hpp"
 
 #include "third_party/boost/boost/cstdint.hpp"
@@ -108,6 +109,24 @@ public:
   void on_timeout(RequestTimer* timer);
 
 private:
+  class SslHandshakeWriter {
+  public:
+    static const int MAX_BUFFER_SIZE = 16 * 1024;
+
+    static bool write(Connection* connection, char* buf, size_t buf_size);
+
+  private:
+    SslHandshakeWriter(Connection* connection, char* buf, size_t buf_size);
+
+    static void on_write(uv_write_t* req, int status);
+
+  private:
+    uv_write_t req_;
+    Connection* connection_;
+    uv_buf_t uv_buf_;
+    char buf_[MAX_BUFFER_SIZE];
+  };
+
   class StartupHandler : public Handler {
   public:
     StartupHandler(Connection* connection, Request* request)
@@ -197,6 +216,8 @@ private:
   void notify_ready();
   void notify_error(const std::string& error);
 
+  void ssl_handshake();
+
   void send_credentials();
   void send_initial_auth_response();
 
@@ -231,14 +252,13 @@ private:
 
   // the actual connection
   uv_tcp_t socket_;
-  // ssl stuff
-  bool ssl_handshake_done_;
   // supported stuff sent in start up message
   std::string compression_;
   std::string version_;
   int event_types_;
 
   Timer* connect_timer_;
+  SslSession* ssl_session_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(Connection);
