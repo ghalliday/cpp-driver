@@ -869,7 +869,7 @@ macro(CassSetCompilerFlags)
     # I disabled long-long warning because boost generates about 50 such warnings
     set(WARNING_COMPILER_FLAGS "-Wall -pedantic -Wextra -Wno-long-long -Wno-unused-parameter")
     set(WARNING_COMPILER_FLAGS "${WARNING_COMPILER_FLAGS} -Wno-variadic-macros -Wno-zero-length-array")
-    set(WARNING_COMPILER_FLAGS "${WARNING_COMPILER_FLAGS} -Wno-unused-local-typedef -Wno-unknown-warning-option")
+    set(WARNING_COMPILER_FLAGS "${WARNING_COMPILER_FLAGS} -Wno-unused-local-typedef -Wno-unknown-warning-option -Wno-deprecated-copy")
 
     # OpenSSL is deprecated on later versions of Mac OS X. The long-term solution
     # is to provide a CommonCryto implementation.
